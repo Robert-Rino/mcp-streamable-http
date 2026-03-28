@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -14,13 +17,63 @@ type AddArgs struct {
 	B float64 `json:"b" jsonschema:"The second number"`
 }
 
+type LongRunningArgs struct {
+	Duration int `json:"duration" jsonschema:"Duration of the task in seconds"`
+}
+
+type responseLogger struct {
+	http.ResponseWriter
+	wroteHeader bool
+}
+
+func (rl *responseLogger) logHeaders(statusCode int) {
+	if rl.wroteHeader {
+		return
+	}
+	rl.wroteHeader = true
+	log.Printf("<-- RESPONSE %d", statusCode)
+	for k, v := range rl.ResponseWriter.Header() {
+		log.Printf("  Response Header %s: %v", k, v)
+	}
+}
+
+func (rl *responseLogger) WriteHeader(statusCode int) {
+	rl.logHeaders(statusCode)
+	rl.ResponseWriter.WriteHeader(statusCode)
+}
+
+func (rl *responseLogger) Write(b []byte) (int, error) {
+	if !rl.wroteHeader {
+		rl.logHeaders(http.StatusOK)
+	}
+	log.Printf("<-- RESPONSE DATA: %s", string(b))
+	return rl.ResponseWriter.Write(b)
+}
+
+func (rl *responseLogger) Flush() {
+	if f, ok := rl.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("--> %s %s", r.Method, r.URL.Path)
 		for k, v := range r.Header {
 			log.Printf("  Header %s: %v", k, v)
 		}
-		next.ServeHTTP(w, r)
+
+		if r.Body != nil {
+			body, err := io.ReadAll(r.Body)
+			if err == nil {
+				if len(body) > 0 {
+					log.Printf("--> REQUEST PAYLOAD: %s", string(body))
+				}
+				r.Body = io.NopCloser(bytes.NewBuffer(body))
+			}
+		}
+
+		next.ServeHTTP(&responseLogger{ResponseWriter: w}, r)
 	})
 }
 
@@ -48,7 +101,50 @@ func main() {
 		}, nil, nil
 	})
 
-	log.Println("Server initialized with add tool")
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "long_running_task",
+		Description: "Simulates a long-running task with progress notifications",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args LongRunningArgs) (*mcp.CallToolResult, any, error) {
+		log.Printf("[TOOL] long_running_task: starting for %d seconds", args.Duration)
+
+		// Access the session from the request
+		session := req.GetSession().(*mcp.ServerSession)
+
+		// 1. Send an info log notification
+		session.Log(ctx, &mcp.LoggingMessageParams{
+			Level: "info",
+			Data:  "Starting the long-running simulation...",
+		})
+
+		// 2. Simulate progress
+		steps := 4
+		for i := 1; i <= steps; i++ {
+			time.Sleep(time.Duration(args.Duration*1000/steps) * time.Millisecond)
+			progress := float64(i) / float64(steps) * 100
+			log.Printf("[PROGRESS] %.0f%%", progress)
+
+			// Notify progress if a token was provided in Meta
+			if req.Params.Meta != nil {
+				if token, ok := req.Params.Meta["progressToken"]; ok {
+					session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{
+						Progress:      progress,
+						Total:         100,
+						ProgressToken: token,
+					})
+				}
+			}
+		}
+
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: fmt.Sprintf("Task completed successfully after %d seconds", args.Duration),
+				},
+			},
+		}, nil, nil
+	})
+
+	log.Println("Server initialized with tools")
 
 	handler := mcp.NewStreamableHTTPHandler(func(req *http.Request) *mcp.Server {
 		return server
