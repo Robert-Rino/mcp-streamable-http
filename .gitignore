@@ -1,0 +1,14 @@
+# Binaries
+server
+server.exe
+
+# Logs and temporary test files
+*.log
+*.txt
+session.txt
+sse_stream.txt
+init_resp.txt
+tool_call_resp.txt
+
+# OS metadata
+.DS_Store
