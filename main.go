@@ -10,8 +10,8 @@ import (
 )
 
 type AddArgs struct {
-	A float64 `json:"a" jsonschema:"description=The first number"`
-	B float64 `json:"b" jsonschema:"description=The second number"`
+	A float64 `json:"a" jsonschema:"The first number"`
+	B float64 `json:"b" jsonschema:"The second number"`
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {
