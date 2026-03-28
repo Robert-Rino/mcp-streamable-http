@@ -21,6 +21,19 @@ go run main.go
 
 The server will listen on `http://localhost:8080/mcp`.
 
+## Configuration
+
+The server's behavior can be customized using environment variables:
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `MCP_VERBOSE_LOGGING` | Enable detailed request/response headers and payload logs. | `true` |
+
+To disable verbose logs:
+```bash
+MCP_VERBOSE_LOGGING=false go run main.go
+```
+
 ## Testing with MCP Inspector (Recommended)
 
 The [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector) is the easiest way to test the server with a UI.
