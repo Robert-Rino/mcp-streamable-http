@@ -7,10 +7,20 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+var verboseLogging = true
+
+func init() {
+	if val, ok := os.LookupEnv("MCP_VERBOSE_LOGGING"); ok {
+		verboseLogging = strings.ToLower(val) == "true"
+	}
+}
 
 type AddArgs struct {
 	A float64 `json:"a" jsonschema:"The first number"`
@@ -31,9 +41,11 @@ func (rl *responseLogger) logHeaders(statusCode int) {
 		return
 	}
 	rl.wroteHeader = true
-	log.Printf("<-- RESPONSE %d", statusCode)
-	for k, v := range rl.ResponseWriter.Header() {
-		log.Printf("  Response Header %s: %v", k, v)
+	if verboseLogging {
+		log.Printf("<-- RESPONSE %d", statusCode)
+		for k, v := range rl.ResponseWriter.Header() {
+			log.Printf("  Response Header %s: %v", k, v)
+		}
 	}
 }
 
@@ -46,7 +58,9 @@ func (rl *responseLogger) Write(b []byte) (int, error) {
 	if !rl.wroteHeader {
 		rl.logHeaders(http.StatusOK)
 	}
-	log.Printf("<-- RESPONSE DATA: %s", string(b))
+	if verboseLogging {
+		log.Printf("<-- RESPONSE DATA: %s", string(b))
+	}
 	return rl.ResponseWriter.Write(b)
 }
 
@@ -65,20 +79,24 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
 
 		if r.Method == http.MethodOptions {
-			log.Printf("--> %s %s (CORS Preflight)", r.Method, r.URL.Path)
+			if verboseLogging {
+				log.Printf("--> %s %s (CORS Preflight)", r.Method, r.URL.Path)
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 
-		log.Printf("--> %s %s", r.Method, r.URL.Path)
-		for k, v := range r.Header {
-			log.Printf("  Header %s: %v", k, v)
+		if verboseLogging {
+			log.Printf("--> %s %s", r.Method, r.URL.Path)
+			for k, v := range r.Header {
+				log.Printf("  Header %s: %v", k, v)
+			}
 		}
 
 		if r.Body != nil {
 			body, err := io.ReadAll(r.Body)
 			if err == nil {
-				if len(body) > 0 {
+				if len(body) > 0 && verboseLogging {
 					log.Printf("--> REQUEST PAYLOAD: %s", string(body))
 				}
 				r.Body = io.NopCloser(bytes.NewBuffer(body))
@@ -171,5 +189,3 @@ func main() {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
-
-
