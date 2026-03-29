@@ -41,17 +41,30 @@ func (rl *responseLogger) logHeaders(statusCode int) {
 		return
 	}
 	rl.wroteHeader = true
+
+	// Fix for Node.js/undici/Inspector proxy: 204 with any body (even empty) throws.
+	// We convert 204 to 200 with an empty JSON body to be safe.
+	actualStatus := statusCode
+	if statusCode == http.StatusNoContent {
+		actualStatus = http.StatusOK
+	}
+
 	if verboseLogging {
-		log.Printf("<-- RESPONSE %d", statusCode)
+		log.Printf("<-- RESPONSE %d (Original: %d)", actualStatus, statusCode)
 		for k, v := range rl.ResponseWriter.Header() {
 			log.Printf("  Response Header %s: %v", k, v)
 		}
+	}
+
+	rl.ResponseWriter.WriteHeader(actualStatus)
+	if statusCode == http.StatusNoContent {
+		// Write an empty JSON object if it was a 204
+		rl.ResponseWriter.Write([]byte("{}"))
 	}
 }
 
 func (rl *responseLogger) WriteHeader(statusCode int) {
 	rl.logHeaders(statusCode)
-	rl.ResponseWriter.WriteHeader(statusCode)
 }
 
 func (rl *responseLogger) Write(b []byte) (int, error) {
