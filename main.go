@@ -58,6 +58,18 @@ func (rl *responseLogger) Flush() {
 
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Add CORS headers for browser-based inspectors
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Mcp-Session-Id, Mcp-Protocol-Version")
+		w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
+
+		if r.Method == http.MethodOptions {
+			log.Printf("--> %s %s (CORS Preflight)", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
 		log.Printf("--> %s %s", r.Method, r.URL.Path)
 		for k, v := range r.Header {
 			log.Printf("  Header %s: %v", k, v)
@@ -152,10 +164,12 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", loggingMiddleware(handler))
+	mux.Handle("/mcp/", loggingMiddleware(handler))
 
 	log.Println("MCP Server starting on :8080/mcp")
 	if err := http.ListenAndServe(":8080", mux); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
+
 
