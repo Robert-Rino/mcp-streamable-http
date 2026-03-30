@@ -41,17 +41,30 @@ func (rl *responseLogger) logHeaders(statusCode int) {
 		return
 	}
 	rl.wroteHeader = true
+
+	// Fix for Node.js/undici/Inspector proxy: 204 with any body (even empty) throws.
+	// We convert 204 to 200 with an empty JSON body to be safe.
+	actualStatus := statusCode
+	if statusCode == http.StatusNoContent {
+		actualStatus = http.StatusOK
+	}
+
 	if verboseLogging {
-		log.Printf("<-- RESPONSE %d", statusCode)
+		log.Printf("<-- RESPONSE %d (Original: %d)", actualStatus, statusCode)
 		for k, v := range rl.ResponseWriter.Header() {
 			log.Printf("  Response Header %s: %v", k, v)
 		}
+	}
+
+	rl.ResponseWriter.WriteHeader(actualStatus)
+	if statusCode == http.StatusNoContent {
+		// Write an empty JSON object if it was a 204
+		rl.ResponseWriter.Write([]byte("{}"))
 	}
 }
 
 func (rl *responseLogger) WriteHeader(statusCode int) {
 	rl.logHeaders(statusCode)
-	rl.ResponseWriter.WriteHeader(statusCode)
 }
 
 func (rl *responseLogger) Write(b []byte) (int, error) {
@@ -72,6 +85,20 @@ func (rl *responseLogger) Flush() {
 
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Add CORS headers for browser-based inspectors
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Mcp-Session-Id, Mcp-Protocol-Version")
+		w.Header().Set("Access-Control-Expose-Headers", "Mcp-Session-Id")
+
+		if r.Method == http.MethodOptions {
+			if verboseLogging {
+				log.Printf("--> %s %s (CORS Preflight)", r.Method, r.URL.Path)
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
 		if verboseLogging {
 			log.Printf("--> %s %s", r.Method, r.URL.Path)
 			for k, v := range r.Header {
@@ -168,10 +195,10 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", loggingMiddleware(handler))
+	mux.Handle("/mcp/", loggingMiddleware(handler))
 
 	log.Println("MCP Server starting on :8080/mcp")
 	if err := http.ListenAndServe(":8080", mux); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
-

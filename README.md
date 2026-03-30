@@ -34,6 +34,9 @@ To disable verbose logs:
 MCP_VERBOSE_LOGGING=false go run main.go
 ```
 
+## CORS Support
+The server includes built-in CORS support, allowing it to work with browser-based MCP inspectors and tools. It handles `OPTIONS` preflight requests and exposes the `Mcp-Session-Id` header.
+
 ## Testing with MCP Inspector (Recommended)
 
 The [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector) is the easiest way to test the server with a UI.
@@ -112,3 +115,11 @@ curl -X POST http://localhost:8080/mcp \
 ```
 
 The responses and progress updates will be streamed back through the SSE connection initiated in Step 1.
+
+### 4. Terminate the Session (DELETE)
+To close the session and release resources:
+```bash
+curl -X DELETE http://localhost:8080/mcp \
+  -H "Mcp-Session-Id: <YOUR-SESSION-ID>"
+```
+The server will respond with `204 No Content`, and the SSE stream initiated in Step 1 will automatically close.
